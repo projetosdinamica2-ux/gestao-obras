@@ -43,7 +43,9 @@ td{padding:8px 6px;border-bottom:1px solid var(--line);vertical-align:top}
 .g-row{display:grid;grid-template-columns:170px 1fr;align-items:center;height:30px;gap:8px}
 .g-lab{font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .g-track{position:relative;height:100%;border-left:1px solid var(--line)}
-.g-bar{position:absolute;top:6px;height:18px;border-radius:3px;min-width:4px}
+.g-bar{position:absolute;top:6px;height:18px;border-radius:3px;min-width:4px;overflow:hidden}
+.g-bar u,.g-bar i{position:absolute;top:0;bottom:0;left:0}
+.g-bar u{right:0;opacity:.3}
 .g-today{position:absolute;top:0;bottom:0;width:2px;background:#e3a008}
 .g-scale{display:flex;justify-content:space-between;font-size:12px;color:var(--mut);margin-left:178px}
 .empty{color:var(--mut);padding:24px;text-align:center}
@@ -53,6 +55,12 @@ label{display:block;font-size:13px;color:var(--mut);margin-top:10px}
 input,select,textarea{width:100%;padding:7px 9px;border:1px solid var(--line);border-radius:var(--r);background:#fff}
 .two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .help{font-size:13px;color:var(--mut);margin-top:8px}
+.chk{display:flex;gap:8px;align-items:center;color:var(--ink);font-size:14px;margin-top:6px}
+.chk input{width:auto}
+.chk small{color:var(--mut)}
+.mini{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.mini button{font-size:12.5px;padding:4px 9px}
+.lst{max-height:200px;overflow:auto;border:1px solid var(--line);border-radius:var(--r);padding:6px 10px;background:#fff;margin-top:6px}
 #toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:var(--ink);color:#fff;padding:10px 16px;border-radius:var(--r);display:none;max-width:90vw;z-index:9}
 </style>
 </head>
@@ -81,6 +89,7 @@ input,select,textarea{width:100%;padding:7px 9px;border:1px solid var(--line);bo
   <label>Endereço<input name="endereco"></label>
   <label>Cliente<input name="cliente"></label>
   <label>Situação da obra<select name="situacao"><option value="andamento">Em andamento</option><option value="pausada">Pausada</option><option value="concluida">Concluída</option></select></label>
+  <p class="help" style="margin-top:4px">A obra passa a "Concluída" sozinha quando todas as etapas chegarem a 100%.</p>
   <div class="two"><label>Início<input type="date" name="inicio"></label><label>Fim previsto<input type="date" name="fim"></label></div>
   <div class="bar"><button class="p" value="ok">Salvar obra</button><button value="x" formnovalidate>Cancelar</button></div>
 </form></dialog>
@@ -92,8 +101,28 @@ input,select,textarea{width:100%;padding:7px 9px;border:1px solid var(--line);bo
   <datalist id="pessoas"></datalist>
   <div class="two"><label>Início<input type="date" name="inicio" required></label><label>Fim<input type="date" name="fim" required></label></div>
   <div class="two"><label>Situação<select name="status"><option value="pendente">Não iniciada</option><option value="andamento">Em andamento</option><option value="paralisada">Paralisado</option><option value="concluida">Concluído</option></select></label><label>Progresso (%)<input type="number" name="pct" min="0" max="100" value="0"></label></div>
+  <p class="help" style="margin-top:4px">Com 100% a etapa vira "Concluído" automaticamente.</p>
   <label>Observações<textarea name="obs" rows="3"></textarea></label>
   <div class="bar"><button class="p" value="ok">Salvar etapa</button><button value="x" formnovalidate>Cancelar</button></div>
+</form></dialog>
+
+<dialog id="dRel"><form method="dialog" id="fRel">
+  <h3>Relatório em PDF</h3>
+  <label>Obras no relatório</label>
+  <div class="lst" id="relObras"></div>
+  <div class="mini">
+    <button type="button" id="rTodas">Marcar todas</button>
+    <button type="button" id="rAnd">Só em andamento</button>
+    <button type="button" id="rNenhuma">Limpar</button>
+  </div>
+  <label style="margin-top:14px">Filtrar por data (mostra as etapas que acontecem dentro do período)</label>
+  <div class="two"><label>De<input type="date" name="de" id="rDe"></label><label>Até<input type="date" name="ate" id="rAte"></label></div>
+  <div class="mini">
+    <button type="button" id="rMes">Este mês</button>
+    <button type="button" id="rSemData">Limpar datas</button>
+  </div>
+  <label class="chk" style="margin-top:14px"><input type="checkbox" name="conc" checked> Incluir etapas já concluídas</label>
+  <div class="bar"><button class="p" value="ok">Gerar PDF</button><button value="x" formnovalidate>Cancelar</button></div>
 </form></dialog>
 
 <dialog id="dAsk"><form method="dialog">
@@ -120,15 +149,25 @@ const FILE='gestao-obras.json';
 let db={obras:[]},rev=0,cur=null,dirty=false,saving=false,timer=null;
 let chave='';try{chave=localStorage.getItem('obras_chave')||''}catch(e){}
 const fmt=d=>d?d.split('-').reverse().join('/'):'-';
-const hoje=()=>new Date().toISOString().slice(0,10);
+const pad=n=>String(n).padStart(2,'0');
+const hoje=()=>{const d=new Date();return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())};
 const hora=()=>new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
-const st=e=>(e.status==='pendente'||e.status==='andamento')&&e.fim<hoje()?'atrasada':e.status;
-const pctE=e=>e.status==='concluida'?100:Math.min(100,Math.max(0,+e.pct||0));
+
+/* Regras: 100% = concluída; todas as etapas concluídas = obra concluída */
+const done=e=>e.status==='concluida'||(+e.pct||0)>=100;
+const pctE=e=>done(e)?100:Math.min(100,Math.max(0,+e.pct||0));
+const st=e=>done(e)?'concluida':((e.status==='pendente'||e.status==='andamento')&&e.fim<hoje()?'atrasada':e.status);
 const pctO=o=>{const a=o.etapas||[];return a.length?Math.round(a.reduce((t,e)=>t+pctE(e),0)/a.length*10)/10:0};
-const sitO=o=>o.situacao||'andamento';
+const sitO=o=>{const a=o.etapas||[];if(a.length&&a.every(done))return 'concluida';return o.situacao||'andamento'};
 const sitTxt={andamento:'Em andamento',pausada:'Pausada',concluida:'Concluída'};
 const stTxt={pendente:'Não iniciada',andamento:'Em andamento',concluida:'Concluído',paralisada:'Paralisado',atrasada:'Atrasada'};
 const obra=()=>db.obras.find(o=>o.id===cur);
+function norm(v,x){
+  let p=Math.min(100,Math.max(0,Math.round(+v.pct||0)));
+  if(p>=100){v.status='concluida';p=100}
+  else if(v.status==='concluida'){if(x&&x.status==='concluida')v.status='andamento';else p=100}
+  v.pct=p;return v;
+}
 
 function setSync(t){$('#sync').textContent=t}
 let tt;function toast(m){const t=$('#toast');t.textContent=m;t.style.display='block';clearTimeout(tt);tt=setTimeout(()=>t.style.display='none',4500)}
@@ -183,7 +222,6 @@ async function gravar(forcar){
     saving=false;setSync('Erro ao salvar: '+e.message);
   }
 }
-// Busca mudanças feitas por outras pessoas a cada 45 s (se você não tiver alterações pendentes)
 setInterval(()=>{if(dirty||saving)return;apiGet('revisao').then(r=>{if(r.rev!==rev)carregar()}).catch(()=>{})},45000);
 
 /* ---------- Tela ---------- */
@@ -194,7 +232,7 @@ function render(){
   const et=[...(o.etapas||[])].sort((a,b)=>a.inicio.localeCompare(b.inicio));
   const pessoas=[...new Set(db.obras.flatMap(x=>(x.etapas||[]).map(e=>e.resp)))];
   $('#pessoas').innerHTML=pessoas.map(p=>`<option value="${esc(p)}">`).join('');
-  const feitas=et.filter(e=>e.status==='concluida').length;
+  const feitas=et.filter(done).length;
   el.innerHTML=`<div class="panel"><h2>${esc(o.nome)}</h2>
    <div class="meta"><span>${esc(o.endereco)||'Sem endereço'}</span><span>Cliente: ${esc(o.cliente)||'-'}</span><span>${fmt(o.inicio)} a ${fmt(o.fim)}</span><span>${feitas} de ${et.length} etapas concluídas</span><span><b>Progresso geral: ${pctO(o).toFixed(1).replace('.',',')}%</b></span><span>Obra: ${sitTxt[sitO(o)]}</span></div>
    <div class="bar"><button class="p" id="addEt">+ Nova etapa</button><button id="edObra">Editar obra</button><button class="d" id="delObra">Excluir obra</button></div></div>
@@ -207,10 +245,10 @@ function gantt(et){
   const a=Math.min(...et.map(e=>t(e.inicio))),b=Math.max(...et.map(e=>t(e.fim)))+day,span=b-a;
   const pc=x=>((x-a)/span*100).toFixed(2);
   const td=t(hoje()),today=td>=a&&td<=b?`<div class="g-today" style="left:${pc(td)}%"></div>`:'';
-  const col={paralisada:'#7030a0',pendente:'var(--mut)',andamento:'var(--blue)',concluida:'var(--ok)',atrasada:'var(--bad)'};
-  const iso=ms=>new Date(ms).toISOString().slice(0,10);
+  const col={paralisada:'#7030a0',pendente:'#6b7580',andamento:'#1f5fa6',concluida:'#2f7d4f',atrasada:'#b3392f'};
+  const iso=ms=>{const d=new Date(ms);return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())};
   return `<div class="g-scale"><span>${fmt(iso(a))}</span><span>${fmt(iso(b-day))}</span></div><div class="gantt">`+
-   et.map(e=>`<div class="g-row"><div class="g-lab" title="${esc(e.nome)} - ${esc(e.resp)}">${esc(e.nome)}<span class="help"> ${esc(e.resp)}</span></div><div class="g-track">${today}<div class="g-bar" style="left:${pc(t(e.inicio))}%;width:${(((t(e.fim)+day)-t(e.inicio))/span*100).toFixed(2)}%;background:${col[st(e)]}"></div></div></div>`).join('')+'</div>';
+   et.map(e=>{const c=col[st(e)];return `<div class="g-row"><div class="g-lab" title="${esc(e.nome)} - ${esc(e.resp)} - ${pctE(e)}%">${esc(e.nome)}<span class="help"> ${esc(e.resp)}</span></div><div class="g-track">${today}<div class="g-bar" style="left:${pc(t(e.inicio))}%;width:${(((t(e.fim)+day)-t(e.inicio))/span*100).toFixed(2)}%"><u style="background:${c}"></u><i style="width:${pctE(e)}%;background:${c}"></i></div></div></div>`}).join('')+'</div>';
 }
 
 /* ---------- Ações ---------- */
@@ -230,9 +268,9 @@ $('#det').onclick=async e=>{
   if(e.target.id==='edObra'){openForm('#dObra','#fObra',Object.assign({situacao:'andamento'},o));$('#tObra').textContent='Editar obra';onClose('#dObra',()=>{Object.assign(o,vals('#fObra'));persist()})}
   if(e.target.id==='delObra'&&await ask('Excluir a obra "'+o.nome+'" e todas as suas etapas?','Excluir')){db.obras=db.obras.filter(x=>x!==o);cur=db.obras[0]?db.obras[0].id:null;persist()}
   if(e.target.id==='addEt'){openForm('#dEt','#fEt',{status:'pendente',pct:0});$('#tEt').textContent='Nova etapa';
-    onClose('#dEt',()=>{const v=vals('#fEt');if(v.fim<v.inicio)return toast('A data de fim não pode ser antes do início.');(o.etapas=o.etapas||[]).push(Object.assign({id:uid()},v));persist()})}
-  if(e.target.classList.contains('ee')){const x=o.etapas.find(z=>z.id===id);openForm('#dEt','#fEt',Object.assign({pct:0},x));$('#tEt').textContent='Editar etapa';
-    onClose('#dEt',()=>{const v=vals('#fEt');if(v.fim<v.inicio)return toast('A data de fim não pode ser antes do início.');Object.assign(x,v);persist()})}
+    onClose('#dEt',()=>{const v=vals('#fEt');if(v.fim<v.inicio)return toast('A data de fim não pode ser antes do início.');(o.etapas=o.etapas||[]).push(Object.assign({id:uid()},norm(v,null)));persist()})}
+  if(e.target.classList.contains('ee')){const x=o.etapas.find(z=>z.id===id);openForm('#dEt','#fEt',Object.assign({},x,{pct:pctE(x),status:done(x)?'concluida':x.status}));$('#tEt').textContent='Editar etapa';
+    onClose('#dEt',()=>{const v=vals('#fEt');if(v.fim<v.inicio)return toast('A data de fim não pode ser antes do início.');const n=norm(v,Object.assign({},x,{status:done(x)?'concluida':x.status}));Object.assign(x,n);persist()})}
   if(e.target.classList.contains('de')&&await ask('Excluir esta etapa?','Excluir')){o.etapas=o.etapas.filter(z=>z.id!==id);persist()}
 };
 $('#bAtual').onclick=async()=>{if(dirty&&!await ask('Você tem alterações ainda não salvas. Atualizar agora descarta essas alterações.','Atualizar'))return;carregar()};
@@ -247,30 +285,61 @@ $('#file').onchange=async e=>{
 };
 
 /* ---------- Relatório em PDF ---------- */
-$('#bPdf').onclick=gerarPDF;
-function gerarPDF(){
-  const lista=db.obras.filter(o=>sitO(o)==='andamento');
-  if(!lista.length)return toast('Não há obras em andamento. Confira a "Situação da obra" em Editar obra.');
+const marcar=fn=>document.querySelectorAll('#relObras input').forEach(c=>{c.checked=fn(db.obras.find(o=>o.id===c.value))});
+$('#rTodas').onclick=()=>marcar(()=>true);
+$('#rAnd').onclick=()=>marcar(o=>sitO(o)==='andamento');
+$('#rNenhuma').onclick=()=>marcar(()=>false);
+$('#rSemData').onclick=()=>{$('#rDe').value='';$('#rAte').value=''};
+$('#rMes').onclick=()=>{const d=new Date(),y=d.getFullYear(),m=d.getMonth();
+  $('#rDe').value=y+'-'+pad(m+1)+'-01';$('#rAte').value=y+'-'+pad(m+1)+'-'+pad(new Date(y,m+1,0).getDate())};
+
+$('#bPdf').onclick=()=>{
+  if(!db.obras.length)return toast('Cadastre uma obra antes de gerar o relatório.');
+  $('#fRel').reset();
+  $('#relObras').innerHTML=db.obras.map(o=>`<label class="chk"><input type="checkbox" name="ob" value="${o.id}" ${sitO(o)==='andamento'?'checked':''}> ${esc(o.nome)} <small>(${sitTxt[sitO(o)]})</small></label>`).join('');
+  onClose('#dRel',()=>{
+    const f=new FormData($('#fRel'));
+    const opts={ids:f.getAll('ob'),de:f.get('de')||'',ate:f.get('ate')||'',conc:f.has('conc')};
+    if(!opts.ids.length)return toast('Escolha pelo menos uma obra para o relatório.');
+    if(opts.de&&opts.ate&&opts.de>opts.ate)return toast('A data inicial não pode ser depois da data final.');
+    gerarPDF(opts);
+  });
+  $('#dRel').showModal();
+};
+
+function gerarPDF(opts){
+  const lista=db.obras.filter(o=>opts.ids.includes(o.id));
   if(!window.jspdf)return toast('A biblioteca de PDF não carregou. Verifique a internet e recarregue a página.');
   const doc=new window.jspdf.jsPDF({orientation:'landscape',unit:'mm',format:'a4'});
   const W=doc.internal.pageSize.getWidth(),H=doc.internal.pageSize.getHeight();
   doc.setFont('helvetica','bold');doc.setFontSize(16);doc.setTextColor(29,39,51);
-  doc.text('Relatório de obras em andamento',14,14);
+  doc.text('Relatório de obras',14,14);
   doc.setFont('helvetica','normal');doc.setFontSize(9);doc.setTextColor(110);
-  doc.text('Gerado em '+new Date().toLocaleString('pt-BR')+' - '+lista.length+' obra(s)',14,19);
+  let sub='Gerado em '+new Date().toLocaleString('pt-BR')+' - '+lista.length+' obra(s)';
+  if(opts.de||opts.ate)sub+=' - Período: '+(opts.de?fmt(opts.de):'início')+' a '+(opts.ate?fmt(opts.ate):'sem limite');
+  if(!opts.conc)sub+=' - sem etapas concluídas';
+  doc.text(sub,14,19);
   const cores={concluida:[0,176,80],andamento:[255,255,0],paralisada:[112,48,160],atrasada:[192,0,0],pendente:[140,140,140]};
   let y=26;
   lista.forEach(o=>{
-    const et=[...(o.etapas||[])].sort((a,b)=>a.inicio.localeCompare(b.inicio));
+    let et=[...(o.etapas||[])].sort((a,b)=>a.inicio.localeCompare(b.inicio));
+    if(opts.de)et=et.filter(e=>e.fim>=opts.de);
+    if(opts.ate)et=et.filter(e=>e.inicio<=opts.ate);
+    if(!opts.conc)et=et.filter(e=>st(e)!=='concluida');
     if(y>H-50){doc.addPage();y=14}
     doc.setFillColor(0,112,192);doc.rect(14,y,W-28,8,'F');
     doc.setTextColor(255);doc.setFont('helvetica','bold');doc.setFontSize(11);
     doc.text(o.nome.toUpperCase(),16,y+5.6);
-    doc.text(pctO(o).toFixed(1).replace('.',',')+'%',W-16,y+5.6,{align:'right'});
+    doc.text(sitTxt[sitO(o)]+'  -  '+pctO(o).toFixed(1).replace('.',',')+'%',W-16,y+5.6,{align:'right'});
     y+=11;
     doc.setTextColor(60);doc.setFont('helvetica','normal');doc.setFontSize(9);
     doc.text([o.endereco&&('Endereço: '+o.endereco),o.cliente&&('Cliente: '+o.cliente),'Período: '+fmt(o.inicio)+' a '+fmt(o.fim)].filter(Boolean).join('   |   '),14,y);
     y+=3;
+    if(!et.length){
+      doc.setTextColor(120);doc.setFontSize(9);
+      doc.text('Nenhuma etapa encontrada com os filtros escolhidos.',14,y+5);
+      y+=14;return;
+    }
     doc.autoTable({startY:y,margin:{left:14,right:14},theme:'grid',
       head:[['Nº','Etapa','Responsável','Início','Fim','Progresso','Situação','Observações']],
       body:et.map((e,i)=>[i+1,e.nome,e.resp,fmt(e.inicio),fmt(e.fim),'',stTxt[st(e)],e.obs||'']),

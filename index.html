@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Gestão de Obras</title>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;600;800&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#ecedeb;--card:#fafaf8;--ink:#1d2733;--mut:#6b7580;--line:#cdd1ce;--blue:#1f5fa6;--ok:#2f7d4f;--warn:#c27a10;--bad:#b3392f;--r:6px}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 Archivo,system-ui,sans-serif}
+header{display:flex;flex-wrap:wrap;gap:12px;align-items:center;padding:14px 20px;background:var(--ink);color:#fff}
+header h1{font-size:19px;font-weight:800;margin:0;margin-right:auto}
+button,input,select,textarea{font:inherit;color:inherit}
+button{cursor:pointer;border:1px solid var(--line);background:var(--card);border-radius:var(--r);padding:7px 12px}
+button:hover{border-color:var(--blue)}
+button.p{background:var(--blue);border-color:var(--blue);color:#fff}
+button.d{color:var(--bad)}
+header button{background:transparent;color:#fff;border-color:#ffffff55}
+header button.p{background:var(--blue);border-color:var(--blue)}
+:focus-visible{outline:2px solid #e3a008;outline-offset:2px}
+#sync{font-size:13px;padding:4px 10px;border-radius:99px;background:#ffffff22}
+main{display:grid;grid-template-columns:260px 1fr;gap:20px;padding:20px;max-width:1300px;margin:auto}
+@media(max-width:800px){main{grid-template-columns:1fr}}
+.side{display:flex;flex-direction:column;gap:8px}
+.ob{text-align:left;width:100%;padding:10px 12px;border-left:4px solid var(--line)}
+.ob.on{border-left-color:var(--blue);background:#fff;font-weight:600}
+.ob small{display:block;color:var(--mut);font-weight:400}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:18px;margin-bottom:18px}
+.panel h2{margin:0 0 4px;font-size:22px;font-weight:800}
+.meta{color:var(--mut);display:flex;flex-wrap:wrap;gap:4px 18px;margin:6px 0 12px}
+.bar{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+table{width:100%;border-collapse:collapse}
+th{text-align:left;font-size:13px;color:var(--mut);font-weight:600;border-bottom:2px solid var(--line);padding:6px}
+td{padding:8px 6px;border-bottom:1px solid var(--line);vertical-align:top}
+.tag{display:inline-block;padding:1px 9px;border-radius:99px;font-size:12.5px;font-weight:600;color:#fff;white-space:nowrap}
+.pendente{background:var(--mut)}.andamento{background:var(--blue)}.concluida{background:var(--ok)}.atrasada{background:var(--bad)}.paralisada{background:#7030a0}
+.pb{background:#dfe3e0;border-radius:3px;height:16px;min-width:90px;position:relative;overflow:hidden}
+.pb i{display:block;height:100%;background:#00b050}
+.pb b{position:absolute;inset:0;text-align:center;font-size:11px;line-height:16px}
+.tbl{overflow-x:auto}
+.gantt{position:relative;overflow-x:auto}
+.g-row{display:grid;grid-template-columns:170px 1fr;align-items:center;height:30px;gap:8px}
+.g-lab{font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.g-track{position:relative;height:100%;border-left:1px solid var(--line)}
+.g-bar{position:absolute;top:6px;height:18px;border-radius:3px;min-width:4px}
+.g-today{position:absolute;top:0;bottom:0;width:2px;background:#e3a008}
+.g-scale{display:flex;justify-content:space-between;font-size:12px;color:var(--mut);margin-left:178px}
+.empty{color:var(--mut);padding:24px;text-align:center}
+dialog{border:1px solid var(--line);border-radius:var(--r);padding:20px;width:min(480px,94vw);background:var(--card)}
+dialog::backdrop{background:#0008}
+label{display:block;font-size:13px;color:var(--mut);margin-top:10px}
+input,select,textarea{width:100%;padding:7px 9px;border:1px solid var(--line);border-radius:var(--r);background:#fff}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.help{font-size:13px;color:var(--mut);margin-top:8px}
+#toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:var(--ink);color:#fff;padding:10px 16px;border-radius:var(--r);display:none;max-width:90vw;z-index:9}
+</style>
+</head>
+<body>
+<header>
+  <h1>Gestão de Obras</h1>
+  <span id="sync">Carregando…</span>
+  <button id="bAtual">Atualizar</button>
+  <button id="bExp">Exportar</button>
+  <button id="bImp">Importar</button>
+  <button id="bPdf" class="p">Gerar relatório PDF</button>
+  <input id="file" type="file" accept=".json" hidden>
+</header>
+<main>
+  <aside class="side">
+    <button class="p" id="bNovaObra">+ Nova obra</button>
+    <div id="lista"></div>
+  </aside>
+  <section id="det"></section>
+</main>
+<div id="toast" role="status"></div>
+
+<dialog id="dObra"><form method="dialog" id="fObra">
+  <h3 id="tObra">Obra</h3>
+  <label>Nome da obra<input name="nome" required></label>
+  <label>Endereço<input name="endereco"></label>
+  <label>Cliente<input name="cliente"></label>
+  <label>Situação da obra<select name="situacao"><option value="andamento">Em andamento</option><option value="pausada">Pausada</option><option value="concluida">Concluída</option></select></label>
+  <div class="two"><label>Início<input type="date" name="inicio"></label><label>Fim previsto<input type="date" name="fim"></label></div>
+  <div class="bar"><button class="p" value="ok">Salvar obra</button><button value="x" formnovalidate>Cancelar</button></div>
+</form></dialog>
+
+<dialog id="dEt"><form method="dialog" id="fEt">
+  <h3 id="tEt">Etapa</h3>
+  <label>Etapa (ex.: Fundação, Alvenaria)<input name="nome" required></label>
+  <label>Quem executa<input name="resp" list="pessoas" required></label>
+  <datalist id="pessoas"></datalist>
+  <div class="two"><label>Início<input type="date" name="inicio" required></label><label>Fim<input type="date" name="fim" required></label></div>
+  <div class="two"><label>Situação<select name="status"><option value="pendente">Não iniciada</option><option value="andamento">Em andamento</option><option value="paralisada">Paralisado</option><option value="concluida">Concluído</option></select></label><label>Progresso (%)<input type="number" name="pct" min="0" max="100" value="0"></label></div>
+  <label>Observações<textarea name="obs" rows="3"></textarea></label>
+  <div class="bar"><button class="p" value="ok">Salvar etapa</button><button value="x" formnovalidate>Cancelar</button></div>
+</form></dialog>
+
+<dialog id="dAsk"><form method="dialog">
+  <p id="askMsg" style="margin-top:0"></p>
+  <div class="bar"><button class="p" id="askOk" value="ok">Confirmar</button><button value="x">Cancelar</button></div>
+</form></dialog>
+
+<dialog id="dChave"><form method="dialog" id="fChave">
+  <h3>Chave de acesso</h3>
+  <label>Digite a chave que a equipe recebeu<input name="chave" type="password" autocomplete="off"></label>
+  <div class="bar"><button class="p" value="ok">Entrar</button></div>
+</form></dialog>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
+<script>
+const API_URL='https://script.google.com/macros/s/AKfycbxeUGYTp8CLR2FUfS2adgQUDm44YfUcHAcerrR_Mm4BTf6mh3LdcMmZp_GuJlyrAcs5/exec';
+
+const $=s=>document.querySelector(s);
+const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const uid=()=>Math.random().toString(36).slice(2,9);
+const FILE='gestao-obras.json';
+
+let db={obras:[]},rev=0,cur=null,dirty=false,saving=false,timer=null;
+let chave='';try{chave=localStorage.getItem('obras_chave')||''}catch(e){}
+const fmt=d=>d?d.split('-').reverse().join('/'):'-';
+const hoje=()=>new Date().toISOString().slice(0,10);
+const hora=()=>new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
+const st=e=>(e.status==='pendente'||e.status==='andamento')&&e.fim<hoje()?'atrasada':e.status;
+const pctE=e=>e.status==='concluida'?100:Math.min(100,Math.max(0,+e.pct||0));
+const pctO=o=>{const a=o.etapas||[];return a.length?Math.round(a.reduce((t,e)=>t+pctE(e),0)/a.length*10)/10:0};
+const sitO=o=>o.situacao||'andamento';
+const sitTxt={andamento:'Em andamento',pausada:'Pausada',concluida:'Concluída'};
+const stTxt={pendente:'Não iniciada',andamento:'Em andamento',concluida:'Concluído',paralisada:'Paralisado',atrasada:'Atrasada'};
+const obra=()=>db.obras.find(o=>o.id===cur);
+
+function setSync(t){$('#sync').textContent=t}
+let tt;function toast(m){const t=$('#toast');t.textContent=m;t.style.display='block';clearTimeout(tt);tt=setTimeout(()=>t.style.display='none',4500)}
+function ask(msg,ok){return new Promise(res=>{$('#askMsg').textContent=msg;$('#askOk').textContent=ok||'Confirmar';const d=$('#dAsk');d.addEventListener('close',()=>res(d.returnValue==='ok'),{once:true});d.showModal()})}
+
+/* ---------- Comunicação com o Apps Script (Drive) ---------- */
+function tratar(j){
+  if(!j.ok){const e=new Error(j.erro==='chave'?'Chave de acesso incorreta':(j.erro||'Erro desconhecido'));e.chave=(j.erro==='chave');throw e}
+  return j;
+}
+async function apiGet(action){
+  const r=await fetch(API_URL+'?action='+action+'&chave='+encodeURIComponent(chave));
+  return tratar(await r.json());
+}
+async function apiPost(corpo){
+  const r=await fetch(API_URL,{method:'POST',body:JSON.stringify(Object.assign({chave:chave},corpo))});
+  return tratar(await r.json());
+}
+function pedirChave(){
+  $('#fChave').reset();
+  onClose('#dChave',()=>{chave=vals('#fChave').chave||'';try{localStorage.setItem('obras_chave',chave)}catch(e){}carregar()});
+  $('#dChave').showModal();
+}
+async function carregar(){
+  setSync('Carregando…');
+  try{
+    const r=await apiGet('carregar');
+    db=r.db;rev=r.rev;if(!obra())cur=db.obras[0]?db.obras[0].id:null;
+    dirty=false;render();setSync('Sincronizado às '+hora());
+  }catch(e){
+    if(e.chave){setSync('Chave de acesso necessária');pedirChave()}
+    else setSync('Erro: '+e.message+' (verifique a internet)');
+  }
+}
+function persist(){
+  render();dirty=true;setSync('Alterações pendentes…');
+  clearTimeout(timer);timer=setTimeout(()=>gravar(false),1000);
+}
+async function gravar(forcar){
+  if(saving){timer=setTimeout(()=>gravar(forcar),800);return}
+  saving=true;setSync('Salvando…');
+  try{
+    const r=await apiPost({db:db,rev:rev,forcar:!!forcar});
+    saving=false;
+    if(r.conflito){
+      const sobrescrever=await ask('Outra pessoa alterou os dados depois da sua última leitura. Deseja sobrescrever com a sua versão? (Cancelar baixa a versão do Drive e descarta suas últimas mudanças.)','Sobrescrever');
+      if(sobrescrever){gravar(true)}else{carregar()}
+      return;
+    }
+    rev=r.rev;dirty=false;setSync('Salvo no Drive às '+hora());
+  }catch(e){
+    saving=false;setSync('Erro ao salvar: '+e.message);
+  }
+}
+// Busca mudanças feitas por outras pessoas a cada 45 s (se você não tiver alterações pendentes)
+setInterval(()=>{if(dirty||saving)return;apiGet('revisao').then(r=>{if(r.rev!==rev)carregar()}).catch(()=>{})},45000);
+
+/* ---------- Tela ---------- */
+function render(){
+  $('#lista').innerHTML=db.obras.map(o=>`<button class="ob ${o.id===cur?'on':''}" data-o="${o.id}">${esc(o.nome)}<small>${pctO(o).toFixed(0)}% concluído${sitO(o)!=='andamento'?' - '+sitTxt[sitO(o)]:''}</small></button>`).join('')||'<div class="empty">Nenhuma obra ainda.</div>';
+  const o=obra(),el=$('#det');
+  if(!o){el.innerHTML='<div class="panel empty">Crie a primeira obra para começar.</div>';return}
+  const et=[...(o.etapas||[])].sort((a,b)=>a.inicio.localeCompare(b.inicio));
+  const pessoas=[...new Set(db.obras.flatMap(x=>(x.etapas||[]).map(e=>e.resp)))];
+  $('#pessoas').innerHTML=pessoas.map(p=>`<option value="${esc(p)}">`).join('');
+  const feitas=et.filter(e=>e.status==='concluida').length;
+  el.innerHTML=`<div class="panel"><h2>${esc(o.nome)}</h2>
+   <div class="meta"><span>${esc(o.endereco)||'Sem endereço'}</span><span>Cliente: ${esc(o.cliente)||'-'}</span><span>${fmt(o.inicio)} a ${fmt(o.fim)}</span><span>${feitas} de ${et.length} etapas concluídas</span><span><b>Progresso geral: ${pctO(o).toFixed(1).replace('.',',')}%</b></span><span>Obra: ${sitTxt[sitO(o)]}</span></div>
+   <div class="bar"><button class="p" id="addEt">+ Nova etapa</button><button id="edObra">Editar obra</button><button class="d" id="delObra">Excluir obra</button></div></div>
+   <div class="panel"><h3 style="margin-top:0">Cronograma</h3>${gantt(et)}</div>
+   <div class="panel tbl"><h3 style="margin-top:0">Etapas e responsáveis</h3>${et.length?`<table><tr><th>Etapa</th><th>Quem executa</th><th>Início</th><th>Fim</th><th>Progresso</th><th>Situação</th><th></th></tr>${et.map(e=>`<tr><td><b>${esc(e.nome)}</b>${e.obs?`<div class="help">${esc(e.obs)}</div>`:''}</td><td>${esc(e.resp)}</td><td>${fmt(e.inicio)}</td><td>${fmt(e.fim)}</td><td><div class="pb"><i style="width:${pctE(e)}%"></i><b>${pctE(e)}%</b></div></td><td><span class="tag ${st(e)}">${stTxt[st(e)]}</span></td><td style="white-space:nowrap"><button data-e="${e.id}" class="ee">Editar</button> <button data-e="${e.id}" class="d de">Excluir</button></td></tr>`).join('')}</table>`:'<div class="empty">Adicione a primeira etapa desta obra.</div>'}</div>`;
+}
+function gantt(et){
+  if(!et.length)return '<div class="empty">O cronograma aparece quando houver etapas.</div>';
+  const day=864e5,t=s=>new Date(s+'T00:00').getTime();
+  const a=Math.min(...et.map(e=>t(e.inicio))),b=Math.max(...et.map(e=>t(e.fim)))+day,span=b-a;
+  const pc=x=>((x-a)/span*100).toFixed(2);
+  const td=t(hoje()),today=td>=a&&td<=b?`<div class="g-today" style="left:${pc(td)}%"></div>`:'';
+  const col={paralisada:'#7030a0',pendente:'var(--mut)',andamento:'var(--blue)',concluida:'var(--ok)',atrasada:'var(--bad)'};
+  const iso=ms=>new Date(ms).toISOString().slice(0,10);
+  return `<div class="g-scale"><span>${fmt(iso(a))}</span><span>${fmt(iso(b-day))}</span></div><div class="gantt">`+
+   et.map(e=>`<div class="g-row"><div class="g-lab" title="${esc(e.nome)} - ${esc(e.resp)}">${esc(e.nome)}<span class="help"> ${esc(e.resp)}</span></div><div class="g-track">${today}<div class="g-bar" style="left:${pc(t(e.inicio))}%;width:${(((t(e.fim)+day)-t(e.inicio))/span*100).toFixed(2)}%;background:${col[st(e)]}"></div></div></div>`).join('')+'</div>';
+}
+
+/* ---------- Ações ---------- */
+function openForm(dlg,form,data){
+  const f=$(form);f.reset();
+  for(const k in data)if(f.elements[k])f.elements[k].value=data[k]==null?'':data[k];
+  $(dlg).showModal();
+}
+function onClose(dlg,fn){$(dlg).addEventListener('close',()=>{if($(dlg).returnValue==='ok')fn()},{once:true})}
+const vals=f=>Object.fromEntries(new FormData($(f)));
+
+$('#bNovaObra').onclick=()=>{openForm('#dObra','#fObra',{situacao:'andamento'});$('#tObra').textContent='Nova obra';
+  onClose('#dObra',()=>{const o=Object.assign({id:uid(),etapas:[]},vals('#fObra'));db.obras.push(o);cur=o.id;persist()})};
+$('#lista').onclick=e=>{const b=e.target.closest('[data-o]');if(b){cur=b.dataset.o;render()}};
+$('#det').onclick=async e=>{
+  const o=obra(),id=e.target.dataset.e;
+  if(e.target.id==='edObra'){openForm('#dObra','#fObra',Object.assign({situacao:'andamento'},o));$('#tObra').textContent='Editar obra';onClose('#dObra',()=>{Object.assign(o,vals('#fObra'));persist()})}
+  if(e.target.id==='delObra'&&await ask('Excluir a obra "'+o.nome+'" e todas as suas etapas?','Excluir')){db.obras=db.obras.filter(x=>x!==o);cur=db.obras[0]?db.obras[0].id:null;persist()}
+  if(e.target.id==='addEt'){openForm('#dEt','#fEt',{status:'pendente',pct:0});$('#tEt').textContent='Nova etapa';
+    onClose('#dEt',()=>{const v=vals('#fEt');if(v.fim<v.inicio)return toast('A data de fim não pode ser antes do início.');(o.etapas=o.etapas||[]).push(Object.assign({id:uid()},v));persist()})}
+  if(e.target.classList.contains('ee')){const x=o.etapas.find(z=>z.id===id);openForm('#dEt','#fEt',Object.assign({pct:0},x));$('#tEt').textContent='Editar etapa';
+    onClose('#dEt',()=>{const v=vals('#fEt');if(v.fim<v.inicio)return toast('A data de fim não pode ser antes do início.');Object.assign(x,v);persist()})}
+  if(e.target.classList.contains('de')&&await ask('Excluir esta etapa?','Excluir')){o.etapas=o.etapas.filter(z=>z.id!==id);persist()}
+};
+$('#bAtual').onclick=async()=>{if(dirty&&!await ask('Você tem alterações ainda não salvas. Atualizar agora descarta essas alterações.','Atualizar'))return;carregar()};
+$('#bExp').onclick=()=>{const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(db,null,1)],{type:'application/json'}));a.download=FILE;a.click()};
+$('#bImp').onclick=()=>$('#file').click();
+$('#file').onchange=async e=>{
+  const f=e.target.files[0];if(!f)return;
+  try{const j=JSON.parse(await f.text());if(!Array.isArray(j.obras))throw 0;
+    if(await ask('Substituir todos os dados atuais pelos do arquivo?','Substituir')){db=j;cur=db.obras[0]?db.obras[0].id:null;persist()}
+  }catch(x){toast('Arquivo inválido.')}
+  e.target.value='';
+};
+
+/* ---------- Relatório em PDF ---------- */
+$('#bPdf').onclick=gerarPDF;
+function gerarPDF(){
+  const lista=db.obras.filter(o=>sitO(o)==='andamento');
+  if(!lista.length)return toast('Não há obras em andamento. Confira a "Situação da obra" em Editar obra.');
+  if(!window.jspdf)return toast('A biblioteca de PDF não carregou. Verifique a internet e recarregue a página.');
+  const doc=new window.jspdf.jsPDF({orientation:'landscape',unit:'mm',format:'a4'});
+  const W=doc.internal.pageSize.getWidth(),H=doc.internal.pageSize.getHeight();
+  doc.setFont('helvetica','bold');doc.setFontSize(16);doc.setTextColor(29,39,51);
+  doc.text('Relatório de obras em andamento',14,14);
+  doc.setFont('helvetica','normal');doc.setFontSize(9);doc.setTextColor(110);
+  doc.text('Gerado em '+new Date().toLocaleString('pt-BR')+' - '+lista.length+' obra(s)',14,19);
+  const cores={concluida:[0,176,80],andamento:[255,255,0],paralisada:[112,48,160],atrasada:[192,0,0],pendente:[140,140,140]};
+  let y=26;
+  lista.forEach(o=>{
+    const et=[...(o.etapas||[])].sort((a,b)=>a.inicio.localeCompare(b.inicio));
+    if(y>H-50){doc.addPage();y=14}
+    doc.setFillColor(0,112,192);doc.rect(14,y,W-28,8,'F');
+    doc.setTextColor(255);doc.setFont('helvetica','bold');doc.setFontSize(11);
+    doc.text(o.nome.toUpperCase(),16,y+5.6);
+    doc.text(pctO(o).toFixed(1).replace('.',',')+'%',W-16,y+5.6,{align:'right'});
+    y+=11;
+    doc.setTextColor(60);doc.setFont('helvetica','normal');doc.setFontSize(9);
+    doc.text([o.endereco&&('Endereço: '+o.endereco),o.cliente&&('Cliente: '+o.cliente),'Período: '+fmt(o.inicio)+' a '+fmt(o.fim)].filter(Boolean).join('   |   '),14,y);
+    y+=3;
+    doc.autoTable({startY:y,margin:{left:14,right:14},theme:'grid',
+      head:[['Nº','Etapa','Responsável','Início','Fim','Progresso','Situação','Observações']],
+      body:et.map((e,i)=>[i+1,e.nome,e.resp,fmt(e.inicio),fmt(e.fim),'',stTxt[st(e)],e.obs||'']),
+      styles:{fontSize:9,cellPadding:1.8,lineColor:[200,200,200],textColor:30,valign:'middle'},
+      headStyles:{fillColor:[230,232,230],textColor:30},
+      columnStyles:{0:{cellWidth:10,halign:'center'},2:{cellWidth:30},3:{cellWidth:21},4:{cellWidth:21},5:{cellWidth:30},6:{cellWidth:27,halign:'center',fontStyle:'bold'}},
+      didParseCell:d=>{if(d.section==='body'&&d.column.index===6){const k=st(et[d.row.index]);d.cell.styles.fillColor=cores[k];d.cell.styles.textColor=k==='andamento'?0:255}},
+      didDrawCell:d=>{if(d.section==='body'&&d.column.index===5){
+        const p=pctE(et[d.row.index]),x=d.cell.x+1.5,w=d.cell.width-3,yy=d.cell.y+2,h=d.cell.height-4;
+        doc.setFillColor(225,228,225);doc.rect(x,yy,w,h,'F');
+        if(p>0){doc.setFillColor(0,176,80);doc.rect(x,yy,w*p/100,h,'F')}
+        doc.setTextColor(20);doc.setFont('helvetica','normal');doc.setFontSize(8);
+        doc.text(p.toFixed(0)+'%',x+w/2,yy+h/2+1,{align:'center'})}}
+    });
+    y=doc.lastAutoTable.finalY+10;
+  });
+  const n=doc.internal.getNumberOfPages();
+  for(let i=1;i<=n;i++){doc.setPage(i);doc.setFontSize(8);doc.setTextColor(130);doc.text('Página '+i+' de '+n,W-14,H-6,{align:'right'})}
+  doc.save('relatorio-obras-'+hoje()+'.pdf');
+}
+
+carregar();
+</script>
+</body>
+</html>

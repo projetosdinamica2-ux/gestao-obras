@@ -8,6 +8,7 @@
 <style>
 :root{--bg:#ecedeb;--card:#fafaf8;--ink:#1d2733;--mut:#6b7580;--line:#cdd1ce;--blue:#1f5fa6;--ok:#2f7d4f;--warn:#c27a10;--bad:#b3392f;--r:6px}
 *{box-sizing:border-box}
+[hidden]{display:none!important}
 body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 Archivo,system-ui,sans-serif}
 header{display:flex;flex-wrap:wrap;gap:12px;align-items:center;padding:14px 20px;background:var(--ink);color:#fff}
 header h1{font-size:19px;font-weight:800;margin:0;margin-right:auto}
@@ -20,6 +21,10 @@ header button{background:transparent;color:#fff;border-color:#ffffff55}
 header button.p{background:var(--blue);border-color:var(--blue)}
 :focus-visible{outline:2px solid #e3a008;outline-offset:2px}
 #sync{font-size:13px;padding:4px 10px;border-radius:99px;background:#ffffff22}
+.tabs{display:flex;gap:4px;padding:10px 20px 0;max-width:1300px;margin:auto}
+.tab{border:none;border-bottom:3px solid transparent;border-radius:0;background:transparent;padding:8px 14px;font-weight:600;color:var(--mut)}
+.tab:hover{border-color:transparent}
+.tab.on,.tab.on:hover{color:var(--ink);border-bottom-color:var(--blue)}
 main{display:grid;grid-template-columns:260px 1fr;gap:20px;padding:20px;max-width:1300px;margin:auto}
 @media(max-width:800px){main{grid-template-columns:1fr}}
 .side{display:flex;flex-direction:column;gap:8px}
@@ -62,6 +67,29 @@ input,select,textarea{width:100%;padding:7px 9px;border:1px solid var(--line);bo
 .mini button{font-size:12.5px;padding:4px 9px}
 .lst{max-height:200px;overflow:auto;border:1px solid var(--line);border-radius:var(--r);padding:6px 10px;background:#fff;margin-top:6px}
 #toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:var(--ink);color:#fff;padding:10px 16px;border-radius:var(--r);display:none;max-width:90vw;z-index:9}
+/* Painel */
+#painel{max-width:1300px;margin:auto;padding:20px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:18px}
+.kpi{text-align:left;background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:14px 16px;font:inherit}
+div.kpi{cursor:default}
+.kpi.on{border-color:var(--ink);box-shadow:0 0 0 1px var(--ink)}
+.kpi span{display:flex;align-items:center;gap:7px;color:var(--mut);font-size:14px}
+.kpi span i{width:10px;height:10px;border-radius:50%;display:inline-block}
+.kpi b{display:block;font-size:30px;font-weight:800;margin-top:4px;color:var(--ink)}
+.dash2{display:grid;grid-template-columns:minmax(260px,380px) 1fr;gap:18px;align-items:start}
+@media(max-width:800px){.dash2{grid-template-columns:1fr}}
+.pie{display:flex;flex-direction:column;align-items:center;gap:14px}
+.pie svg{width:100%;max-width:260px;height:auto}
+.leg{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:13px;color:var(--mut)}
+.leg i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px}
+.dist{display:flex;height:14px;border-radius:99px;overflow:hidden;background:#dfe3e0;margin:10px 0}
+.dist div{height:100%}
+.orow{display:block;width:100%;text-align:left;border:none;border-bottom:1px solid var(--line);border-radius:0;background:transparent;padding:12px 4px}
+.orow:hover{background:#fff;border-bottom-color:var(--line)}
+.orow .t{display:flex;justify-content:space-between;gap:10px;align-items:center;font-weight:600}
+.orow .pbar{height:6px;background:#dfe3e0;border-radius:99px;margin:8px 0 4px;overflow:hidden}
+.orow .pbar i{display:block;height:100%}
+.orow small{color:var(--mut)}
 </style>
 </head>
 <body>
@@ -74,13 +102,18 @@ input,select,textarea{width:100%;padding:7px 9px;border:1px solid var(--line);bo
   <button id="bPdf" class="p">Gerar relatório PDF</button>
   <input id="file" type="file" accept=".json" hidden>
 </header>
-<main>
+<nav class="tabs">
+  <button class="tab on" id="tObras">Obras</button>
+  <button class="tab" id="tPainel">Painel</button>
+</nav>
+<main id="vObras">
   <aside class="side">
     <button class="p" id="bNovaObra">+ Nova obra</button>
     <div id="lista"></div>
   </aside>
   <section id="det"></section>
 </main>
+<section id="painel" hidden></section>
 <div id="toast" role="status"></div>
 
 <dialog id="dObra"><form method="dialog" id="fObra">
@@ -147,6 +180,7 @@ const uid=()=>Math.random().toString(36).slice(2,9);
 const FILE='gestao-obras.json';
 
 let db={obras:[]},rev=0,cur=null,dirty=false,saving=false,timer=null;
+let aba='obras',fSt='';
 let chave='';try{chave=localStorage.getItem('obras_chave')||''}catch(e){}
 const fmt=d=>d?d.split('-').reverse().join('/'):'-';
 const pad=n=>String(n).padStart(2,'0');
@@ -224,8 +258,98 @@ async function gravar(forcar){
 }
 setInterval(()=>{if(dirty||saving)return;apiGet('revisao').then(r=>{if(r.rev!==rev)carregar()}).catch(()=>{})},45000);
 
-/* ---------- Tela ---------- */
+/* ---------- Abas ---------- */
+function mostrarAba(a){
+  aba=a;
+  $('#vObras').hidden=a!=='obras';
+  $('#painel').hidden=a!=='painel';
+  $('#tObras').classList.toggle('on',a==='obras');
+  $('#tPainel').classList.toggle('on',a==='painel');
+  render();
+}
+$('#tObras').onclick=()=>mostrarAba('obras');
+$('#tPainel').onclick=()=>mostrarAba('painel');
+
+/* ---------- Painel ---------- */
+const CAT={
+  andamento:{t:'Em andamento',s:'Em andamento',c:'#1f5fa6'},
+  concluida:{t:'Concluídas',s:'Concluída',c:'#2f7d4f'},
+  atrasada:{t:'Atrasadas',s:'Atrasada',c:'#b3392f'},
+  naoini:{t:'Não iniciadas',s:'Não iniciada',c:'#a8a59d'},
+  pausada:{t:'Pausadas',s:'Pausada',c:'#7030a0'}
+};
+const ORDEM={atrasada:0,andamento:1,naoini:2,pausada:3,concluida:4};
+const dias=(a,b)=>Math.round((new Date(b+'T00:00')-new Date(a+'T00:00'))/864e5);
+
+function infoO(o){
+  const a=o.etapas||[],p=pctO(o),h=hoje(),s=sitO(o);
+  if(s==='concluida')return{k:'concluida',p:p,txt:o.fim?'Prazo previsto: '+fmt(o.fim):'Obra concluída'};
+  if(s==='pausada')return{k:'pausada',p:p,txt:'Obra pausada'};
+  let atraso=0;
+  if(o.fim&&o.fim<h)atraso=dias(o.fim,h);
+  a.forEach(e=>{if(st(e)==='atrasada')atraso=Math.max(atraso,dias(e.fim,h))});
+  if(atraso>0)return{k:'atrasada',p:p,txt:atraso+(atraso===1?' dia':' dias')+' de atraso'};
+  if(p===0&&!a.some(e=>e.status==='andamento'))return{k:'naoini',p:p,txt:o.inicio?'Início previsto em '+fmt(o.inicio):'Nenhuma etapa iniciada'};
+  return{k:'andamento',p:p,txt:o.fim?'Previsão de término: '+fmt(o.fim):'Em execução'};
+}
+
+function pizza(itens){
+  const fat=itens.filter(x=>x.v>0),tot=fat.reduce((s,x)=>s+x.v,0);
+  if(!tot)return '';
+  if(fat.length===1)return `<svg viewBox="0 0 200 200" role="img" aria-label="Gráfico de pizza por situação"><circle cx="100" cy="100" r="90" fill="${fat[0].c}"><title>${fat[0].t}: ${fat[0].v} (100%)</title></circle></svg>`;
+  const R=90,cx=100,cy=100;let ang=-Math.PI/2;
+  const paths=fat.map(x=>{
+    const a=x.v/tot*2*Math.PI,a2=ang+a;
+    const p=[cx+R*Math.cos(ang),cy+R*Math.sin(ang),cx+R*Math.cos(a2),cy+R*Math.sin(a2)].map(n=>n.toFixed(2));
+    const d=`M${cx} ${cy}L${p[0]} ${p[1]}A${R} ${R} 0 ${a>Math.PI?1:0} 1 ${p[2]} ${p[3]}Z`;
+    ang=a2;
+    return `<path d="${d}" fill="${x.c}" stroke="#fafaf8" stroke-width="2"><title>${x.t}: ${x.v} (${Math.round(x.v/tot*100)}%)</title></path>`;
+  }).join('');
+  return `<svg viewBox="0 0 200 200" role="img" aria-label="Gráfico de pizza por situação">${paths}</svg>`;
+}
+
+function renderPainel(){
+  const el=$('#painel');
+  if(!db.obras.length){el.innerHTML='<div class="panel empty">Cadastre uma obra para ver o painel.</div>';return}
+  const inf=db.obras.map(o=>({o:o,i:infoO(o)}));
+  const n=inf.length,cnt={};
+  Object.keys(CAT).forEach(k=>cnt[k]=0);
+  inf.forEach(x=>cnt[x.i.k]++);
+  const pc=v=>Math.round(v/n*100);
+  const kpis=Object.keys(CAT).map(k=>`<button class="kpi ${fSt===k?'on':''}" data-k="${k}"><span><i style="background:${CAT[k].c}"></i>${CAT[k].t}</span><b>${cnt[k]}</b></button>`).join('')+
+    `<div class="kpi"><span>Taxa de conclusão</span><b>${pc(cnt.concluida)}%</b></div>`;
+  const itens=Object.keys(CAT).map(k=>({k:k,t:CAT[k].t,c:CAT[k].c,v:cnt[k]}));
+  const leg=itens.filter(x=>x.v>0).map(x=>`<span><i style="background:${x.c}"></i>${x.t} ${x.v} (${pc(x.v)}%)</span>`).join('');
+  const dist=itens.filter(x=>x.v>0).map(x=>`<div style="width:${x.v/n*100}%;background:${x.c}" title="${x.t}: ${x.v}"></div>`).join('');
+  let linhas=inf.filter(x=>!fSt||x.i.k===fSt).sort((a,b)=>ORDEM[a.i.k]-ORDEM[b.i.k]||a.o.nome.localeCompare(b.o.nome));
+  const lista=linhas.map(x=>{const c=CAT[x.i.k];return `<button class="orow" data-id="${x.o.id}"><div class="t"><span>${esc(x.o.nome)}</span><span class="tag" style="background:${c.c}">${c.s}</span></div><div class="pbar"><i style="width:${x.i.p}%;background:${c.c}"></i></div><small>${esc(x.i.txt)} · ${x.i.p.toFixed(0)}%</small></button>`}).join('')||'<div class="empty">Nenhuma obra nesta situação.</div>';
+  el.innerHTML=`<div style="margin-bottom:14px"><h2 style="margin:0;font-size:22px;font-weight:800">Painel de obras</h2><div class="help" style="margin-top:2px">Atualizado hoje, ${fmt(hoje())} · ${n} ${n===1?'obra':'obras'}</div></div>
+   <div class="kpis">${kpis}</div>
+   <div class="dash2">
+     <div class="panel"><h3 style="margin-top:0">Obras por situação</h3><div class="pie">${pizza(itens)}<div class="leg">${leg}</div></div></div>
+     <div class="panel">
+       <h3 style="margin-top:0">Distribuição por status</h3>
+       <div class="dist">${dist}</div>
+       <div class="leg">${leg}</div>
+       <h3 style="margin:18px 0 0">Obras${fSt?` - ${CAT[fSt].t} <button id="limpaF" style="font-size:12.5px;padding:3px 9px;margin-left:6px">Limpar filtro</button>`:''}</h3>
+       <div>${lista}</div>
+     </div>
+   </div>`;
+}
+$('#painel').onclick=e=>{
+  const k=e.target.closest('[data-k]');
+  if(k){fSt=(fSt===k.dataset.k)?'':k.dataset.k;renderPainel();return}
+  if(e.target.id==='limpaF'){fSt='';renderPainel();return}
+  const r=e.target.closest('[data-id]');
+  if(r){cur=r.dataset.id;mostrarAba('obras')}
+};
+
+/* ---------- Tela de obras ---------- */
 function render(){
+  renderObras();
+  if(aba==='painel')renderPainel();
+}
+function renderObras(){
   $('#lista').innerHTML=db.obras.map(o=>`<button class="ob ${o.id===cur?'on':''}" data-o="${o.id}">${esc(o.nome)}<small>${pctO(o).toFixed(0)}% concluído${sitO(o)!=='andamento'?' - '+sitTxt[sitO(o)]:''}</small></button>`).join('')||'<div class="empty">Nenhuma obra ainda.</div>';
   const o=obra(),el=$('#det');
   if(!o){el.innerHTML='<div class="panel empty">Crie a primeira obra para começar.</div>';return}
